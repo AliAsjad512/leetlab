@@ -1,23 +1,48 @@
+
+
 import express from "express";
 import dotenv from "dotenv";
-import cookieParser from "cookie-parser";
+import cors from "cors";
 import authRoutes from "./routes/auth.routes.js";
-
-
-dotenv.config();
+import { ApiError } from "./utils/ApiError.js";
+import cookieParser from "cookie-parser";
+dotenv.config({
+  path: ".env",
+});
 
 const app = express();
+app.use(
+  cors({
+    origin: ["http://localhost:3000", "http://localhost:8000"],
+    credentials: true,
+    methods: ["PUT", "DELETE", "UPDATE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use("/api/v1/auth",authRoutes);
+app.use((err, req, res, next) => {
+  console.error("💥 Error Middleware Triggered:", err);
 
-app.use(express.json());  // Middleware to parse JSON bodies
-app.use(cookieParser());  // Middleware to parse cookies
+  if (err instanceof ApiError) {
+    return res.status(err.statusCode).json({
+      success: err.success,
+      message: err.message, // ✅ Add this line
+      statusCode: err.statusCode,
+      errors: err.errors || [], // ✅ Optional: only if you're using .errors in your ApiError
+    });
+  }
 
-app.get("/", (req, res) => {
-    res.send("Hello Guys welcome to leetlab 🔥");
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+    statusCode: 500,
+  });
 });
 
-app.use("/api/v1/auth/", authRoutes);  // Authentication routes
-// app.use("/api/v1", );
-// Use dynamic port or default to 8080
-app.listen(process.env.PORT || 8000, () => {
-    console.log(`Server is listening on port ${process.env.PORT || 8080}`);
-});
+const PORT = process.env.PORT || 8000;
+app.listen(PORT,()=>{
+    console.log(`Server is listening on ${PORT}`)
+})

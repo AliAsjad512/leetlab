@@ -1,181 +1,432 @@
 import bcrypt from "bcryptjs"
 import { db } from "../libs/db.js"
 import jwt from "jsonwebtoken"
+import crypto from "crypto";
+import { ApiError } from "../utils/ApiError.js";
 import { UserRole } from "../generated/prisma/index.js"
+import dotenv from "dotenv";
 
-export const register = async(req,res) =>{
-console.log("hit the register")
-    const{email,password,name} = req.body;
+dotenv.config();
+import ApiResponse from "../utils/ApiResponse.js";
+import asyncHandler from "../utils/asynchandler.js";
+import {
+  emailVerificationConfirmationContent,
+  emailVerificationContent,
+  resendEmailVerificationContent,
+  resetPasswordEmailContent,
+  sendMail,
+} from "../utils/mail.js";
+ 
+import { text } from "express";
 
-try {
-    const existingUser = await db.user.findUnique({
-      where : {
-        email
-      }
 
-    })
 
-   if(existingUser){
-    return res.status(400).json({
-        error:"User already exists"
-    })
-   }
+const userRegister = asyncHandler(async(req,res) =>{
+  console.log("hit user register")
+const{name, email,password}=req.body;
 
-   const hashedPassword = await bcrypt.hash(password,10);
-   const newUser = await db.user.create({
-    data : {
-        email,
-        password:hashedPassword,
-        name,
-        role:UserRole.USER
-    }
-   })
+const hashedPassword = await bcrypt.hash(password,10);
 
-   const token =jwt.sign({id:newUser.id}, process.env.JWT_SECRET, {
-    expiresIn :"7d"
-   })
-   res.cookie("jwt",token,{
-    httpOnly:true,
-    sameSite:"strict",
-    secure:process.env.NODE_ENV !== "development",
-    maxAge: 1000 * 60 * 60 * 24 * 7
+const existingUser = await db.User.findUnique({ where: {email}});
+if(existingUser)
+  throw new ApiError(409,"Validation failed", ["User already exist"]);
 
-   })
-  res.status(201).json({
-    success:true,
-    message : "User created successfully",
-    user:{
-        id:newUser.id,
-        email:newUser.email,
-        name:newUser.name,
-        role:newUser.role,
-        image:newUser.image
-    }
+const token = crypto.randomBytes(62).toString("hex");
+const hashedToken=crypto.createHash("sha256").update(token).digest("hex");
+const tokenExpiry = new Date(Date.now() + 5 * 60 * 1000)
 
-  })
-    
-} catch (error) {
-    console.error("Error creating user: ",error);
-    res.status(500).json({
-        error:"Error creating user"
-    })
-}
+const newUser = await db.User.create({
+data: {
+  email,
+  password:hashedPassword,
+  name,
+  verificationToken:hashedToken,
+  verificationTokenExpiry:tokenExpiry,
+  role: UserRole.USER
 
 }
 
 
-// Your Prisma client
-
-
-
-
-export const login = async(req,res) =>{
-  const{email,password} = req.body
-
-  try {
-    const user = await db.user.findUnique({
-      where : {
-        email
-      }
-
-    })
-
-
-    if(!user){
-      return res.status(401).json({
-          error:"User not found"
-      })
-     }
-
-
-  const isMatch = await bcrypt.compare(password,user.password)
-
-  if(!isMatch){
-    return res.status(401).json({
-      error : "Invalid credentials"
-    })
-  }
-
-
-  const token = jwt.sign({id:user.id},process.env.JWT_SECRET,{
-    expiresIn :"7d"
-  })
-
-  res.cookie("jwt" ,token,{
-    httpOnly:true,
-    sameSite :"strict",
-    secure : process.env.NODE_ENV !== "development",
-    maxAge : 1000 * 60 * 60 * 24 * 7
-  })
-
-  res.status(201).json({
-    success:true,
-    message : "User Logged in successfully",
-    user:{
-      id:user.id,
-      email:user.email,
-      name:user.name,
-      role:user.role,
-      image:user.image
-    }
-  
-  })
-
-    
-  } catch (error) {
-    console.error("Error creating user: ",error);
-    res.status(500).json({
-        error:"Error logging in user"
-    })
-    
-  }
-
-
-}
-
-export const logout = async(req,res) =>{
-
-  try {
-    res.clearCookie("jwt",{
-    httpOnly:true,
-    sameSite : "strict",
-    secure:process.env.NODE_ENV !== "development"
-
-    })
-    res.status(200).json({
-    success:true,
-    message :"User logged out successfully"
-
-    })
-
-
-
-  } catch (error) {
-console.error("Error logging out user:",error);
-res.status(500).json({
-  error :"Error logging out user"
 })
+
+console.log(newUser)
+if(!newUser.verificationToken && !newUser.verificationTokenExpiry){
+  throw new ApiError(400,"User registration is failed",[
+    "Verification token failed",
+    "Verification token expiry failed"
+  ])
+}
+
+
+const verificationURL = `${process.env.BASE_URL}/api/v1/auth/verify/${token}`;
+  try {
+    await sendMail({
+      email: newUser.email,
+      subject: "User Verification Email",
+      mailGenContent: emailVerificationContent(name, verificationURL),
+    });
+  } catch (err) {
+    console.error("Email sending error:", err); // Add this line
+  throw new ApiError(400, "Email Verification Confirmation email not sent");
+  }
+
+  res
+  .status(200)
+  .json(
+    new ApiResponse(
+      200,
+      "User is registered and Verification Email sent successfully",
+    ),
+  );
+
+})
+
+const verifyUser = asyncHandler(async(req,res) =>{
+  console.log("hit the Verify user")
+  const { token } = req.params;
+  
+
+  if(!token){
+    throw new ApiError(404,"Token not found");
+  }
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex")
+    
+
+
+    const userToVerify = await db.User.findFirst({
+
+      where: {
+        verificationToken: hashedToken,
+        verificationTokenExpiry: {
+          gt: new Date()
+        }
+      }
+    });
+    
+
+
+const name = userToVerify.name
+
+if(userToVerify.verificationTokenExpiry < Date.now()){
+  throw new ApiError(404,"token expire")
+}
+
+if(!userToVerify){
+  throw new ApiError(404,"User not found.Maybe Token is invalid")
+}
+
+await db.User.update({
+  where : {
+    id:userToVerify.id,
+  },
+  data : {
+    verificationToken:null,
+    isVerified:true,
+    verificationTokenExpiry:null,
+  }
+});
+
+try{
+  await sendMail({
+    email:userToVerify.email,
+    subject: "Email Verification Confirmation",
+    mailGenContent: emailVerificationConfirmationContent(name),
+  })
+} catch(error){
+  throw new ApiError(400,"Email Verification Confirmation email not sent")
+}
+
+return res
+.status(200).json(new ApiResponse(200,"User is verified"))
+
+
+})
+
+const resendverificationemail = asyncHandler(async(req,res) =>{
+
+  const {email} = req.body;
+  const userToVerify = await db.User.findUnique({
+    where : {
+      email
+    }
+  });
+  if(!userToVerify){
+    throw new ApiError(404,"User not found. Please register your account")
+  }
+
+  if(userToVerify.isVerified){
+    throw new ApiError(400,"User is Already verified ")
+  }
+
+  const token = crypto.randomBytes(62).toString("hex" );
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+  const tokenExpiry = new Date(Date.now() + 5 * 60 * 1000);
+
+  await db.User.update({
+  where : {
+    id :userToVerify.id,
+  },
+  data : {
+    verificationToken:hashedToken,
+    verificationTokenExpiry:tokenExpiry,
+  }
+    
+
+  })
+
+  const name = userToVerify.name;
+
+  const verificationURL = `${process.env.BASE_URL}/api/v1/users/verify/${token}`;
+
+  try {
+    await sendMail({
+      email:userToVerify.email,
+      subject : "User Resend Verification Email",
+      mailGenContent:resendEmailVerificationContent(name,verificationURL)
+
+    })
+    
+  } catch (err) {
+    throw new ApiError(400,"Email Verification failed",err)
     
   }
 
+  return res
+    .status(200)
+    .json(new ApiResponse(200,"User verification Email Sent Successfully"))
+
 
 }
-export const check = async(req,res) =>{
-
-try {
-  res.status(200).json({
-    success:true,
-    message : "User authenticated successfully",
-    user:req.user
-  })
 
 
+)
+
+const loginUser = asyncHandler(async(req,res) =>{
+const{email,password} = req.body;
+const loggedinUser = await db.User.findUnique({
+  where : {
+    email
+  }
+})
+if(!loggedinUser){
+  throw new ApiError(404,"Email or Password is incorrect")
+}
+
+const isValid = await bcrypt.compare(password,loggedinUser.password)
+if(!isValid){
+  throw new ApiError(404,"Email or Password is incorrect")
+}
+
+
+const refreshToken = jwt.sign(
+  {
+    id:loggedinUser.id,
+  },
+  process.env.REFRESH_TOKEN_SECRET,
+  {expiresIn : "15m"}
+)
+
+
+const accessToken = jwt.sign(
+  {
+    id:loggedinUser.id,
+    password:loggedinUser.password,
+    email:loggedinUser.email,
+  },
+  process.env.ACCESS_TOKEN_SECRET,
+  {expiresIn : "15m"}
+)
+
+const accessTokenCookieOptions ={
+  httpOnly:true,
+  secure : process.env.NODE_ENV === "production",
+  sameSite : "lax",
+  maxAge : 10 * 60 * 1000
+}
+
+res.cookie("AccessToken",accessToken,accessTokenCookieOptions);
+
+const refreshTokenCookieOptions = {
+  httpOnly:true,
+  secure:process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  maxAge : 20 * 60 * 1000,
+}
+
+res.cookie("RefreshToken",refreshToken,refreshTokenCookieOptions);
+
+loggedinUser.refreshToken=refreshToken;
+await db.User.update({
+  where : {
+    id:loggedinUser.id,
+  },
+  data: {
+    refreshToken:refreshToken,
+  }
+})
+res.status(200).json(new ApiResponse(200,"User is logged In"))
+
+
+
+})
+
+
+const getProfile = asyncHandler(async(req, res) =>{
+  const loggedinUser= await db.User.findUnique(
+    {
+      where : {
+        id:req.user.id
+      }
+    }
+  )
+  if(!loggedinUser) {
+    throw new ApiError(404, "User is logged Out");
+  }
+
+  return res.status(200).json(new ApiResponse(200,"You are on Profile Page"))
+
+})
+
+
+const logOut = asyncHandler(async (req, res) =>{
   
-} catch (error) {
-  console.error("Error checking user:",error);
-  res.status(500),json({
-    error:"Error checking user"
-  })
+const loggedinUser = await db.User.findUnique({
+  where : {
+    id: req.user.id
+  }
+})
+
+if(!loggedinUser){
+  throw new ApiError(404,"User not found")
 }
 
+const accessTokenCookieOptions = {
+  httpOnly: true,
+  secure : process.env.NODE_ENV === "production",
+  sameSite : "lax",
 }
+
+res.clearCookie("AccessToken", accessTokenCookieOptions);
+const refreshTokenCookieOptions = {
+  httpOnly : true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite : "lax",
+  maxAge :20 * 60 * 1000,
+}
+res.clearCookie("RefreshToken", refreshTokenCookieOptions);
+return res.status(200).json(new ApiResponse(200, "User is loggedOut"))
+
+})
+
+const forgotPass = asyncHandler(async(req,res) =>{
+  const { email } = req.body;
+  const user = await db.User.findUnique({
+    where : {
+      email
+    }
+  })
+
+if(!user){
+  throw new ApiError(404,"User not found");
+}
+const name = user.name;
+
+const token = crypto.randomBytes(62).toString("hex");
+const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+const tokenExpiry = new Date(Date.now() + 15 * 60 * 1000);
+
+await db.User.update({
+  where : {id: user.id},
+  data : {
+    forgotPasswordToken:hashedToken,
+    forgotPasswordExpiry : tokenExpiry,
+  }
+})
+ 
+const resetPassUrl = `${process.env.BASE_URL}/api/v1/forgotPass/${token}`;
+
+await sendMail({
+  email:user.email,
+  subject: "Reset Password Email",
+  mailGenContent:resetPasswordEmailContent(name,resetPassUrl)
+})
+
+res.status(200).json(new ApiResponse(200,"Email sent Successfully"))
+
+})
+
+
+const resetPass = asyncHandler(async(req,res) =>{
+  const { token } = req.params;
+  const{ password, confirmPassword} = req.body;
+  if(!token){
+    throw new ApiError(404,"Token not found")
+  }
+
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex")
+  const resetPassUser = await db.User.findUnique({
+    where : {
+      forgotPasswordToken : hashedToken,
+      forgotPasswordExpiry : { gt:new Date()}
+    }
+  })
+
+  if(!resetPassUser){
+    throw new ApiError(404, "User not found");
+  }
+
+  const bcryptPass = await bcrypt.hash(password,10);
+  
+  await db.User.update({
+    where : {
+      id: resetPassUser.id
+    },
+    data: {
+      forgotPasswordToken:null,
+      forgotPasswordExpiry:null,
+      password:bcryptPass
+    }
+  })
+return res.status(200).json(new ApiResponse(200,"Password changes SuccessFylly"))
+
+})
+
+const resetCurrentPass = asyncHandler(async(req,res) =>{
+  const {password,confirmPassword} = req.body;
+  const loggedinUser = await db.User.findUnique( {
+    where : {id : req.user.id}
+  })
+
+if(!loggedinUser){
+  throw new ApiError(404,"User not found");
+}
+
+const bcryptPass = await bcrypt.hash(password,10);
+
+await db.User.update({
+  where : {
+    id:loggedinUser.id
+  },
+  data : {
+   password:bcryptPass
+  }
+})
+
+return res.status(200).json(new ApiResponse(200,"Password changed Successfully"))
+
+
+
+})
+
+
+export {
+  userRegister,
+   verifyUser,
+   resendverificationemail,
+   loginUser,
+   logOut,
+   getProfile,
+  forgotPass,
+  resetPass,
+  resetCurrentPass,
+};
