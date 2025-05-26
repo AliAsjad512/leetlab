@@ -38,7 +38,7 @@ import {
   userRegister,
    verifyUser,
 } from "../controllers/auth.controller.js";
- import isloggedIn from "../middlewares/auth.middlewares.js";
+ import {isloggedIn} from "../middlewares/auth.middlewares.js";
 
 const authRoutes = Router();
 

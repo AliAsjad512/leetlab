@@ -49,7 +49,7 @@ data: {
 
 })
 
-console.log(newUser)
+
 if(!newUser.verificationToken && !newUser.verificationTokenExpiry){
   throw new ApiError(400,"User registration is failed",[
     "Verification token failed",

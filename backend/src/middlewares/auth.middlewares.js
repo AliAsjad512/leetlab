@@ -46,7 +46,8 @@ const isloggedIn = async(req, res,next) =>{
     {
       id:loggedinUser.id,
       password:loggedinUser.password,
-      email:loggedinUser.email
+      email:loggedinUser.email,
+      role: loggedinUser.role 
 
   },
   process.env.ACCESS_TOKEN_SECRET,
@@ -66,58 +67,47 @@ next()
 
 }
 
-export default isloggedIn;
+const checkAdmin =async(req,res,next) =>{
+  console.log("full user",req.user)
+  try {
+    const userId = req.user.id;
+    
+    const user = await db.user.findUnique({
+      where: {
+        id:userId
+      },
+      select : {
+        role:true,
+      }
+    })
 
-// export const authMiddleware = async(req , res, next)=>{
+  console.log("user information here ",user)
 
-//     try {
-//         const token = req.cookies.jwt;
+    if(!user || user.role !== "ADMIN"){
+      throw new ApiError(403, "Access denied - Admins only");
+      // return res.status(403).json({
+      //   message: "Access denied - Admins only "
+      // })
+    }
+     req.user.role = user.role;
+     console.log(req.user.role)
 
-//       if(!token){
-//         return res.status(401).json({
-//             message: "Unauthorized - No token provided"
-//         })
-//       }
-//     let decoded;
-//     try {
-//         decoded = jwt.verify(token,process.env.JWT_SECRET);
-        
-//     } catch (error) {
-//         return res.status(401).json({
-//             message : "Unauthorized - Invalid token"
-//         })
-        
-//     }
-
-//   const user = await db.user.findUnique({
-//     where:{
-//         id:decoded.id
-//     },
-//     select:{
-//         id:true,
-//         image:true,
-//         name:true,
-//         email:true,
-//         role:true
-//     }
-//   })
-
-//   if(!user){
-//     return res.status(404).json({
-//         message:"User not found"
-//     })
-//   }
-
-//   req.user = user;
-//   next()
-        
-//     } catch (error) {
-//         console.error("Error authenticating user",error);
-//         res.status(500).json({message: " Error authenticating user"})
-//     }
+  next()
+    
+  } catch (error) {
+    console.error("Error checking admin role");
+      throw new ApiError(404, "Error checking admin role", error);
+    // console.error("Error checking admin role:",error);
+    // res.status(500).json({message: "Error checking admin role"})
+    
+  }
+}
 
 
 
 
-// }
+
+export  {isloggedIn,checkAdmin};
+
+
 
