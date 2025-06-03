@@ -67,7 +67,7 @@ const verificationURL = `${process.env.BASE_URL}/api/v1/auth/verify/${token}`;
     });
   } catch (err) {
     console.error("Email sending error:", err); // Add this line
-  throw new ApiError(400, "Email Verification Confirmation email not sent");
+  throw new ApiError(400, "Email Verification Confirmation  not sent");
   }
 
   res
@@ -208,6 +208,10 @@ const loggedinUser = await db.User.findUnique({
     email
   }
 })
+
+// if(!loggedinUser.isVerified){
+//   throw new ApiError(404,"Please verify your account first")
+// }
 if(!loggedinUser){
   throw new ApiError(404,"Email or Password is incorrect")
 }

@@ -7,6 +7,9 @@ import authRoutes from "./routes/auth.routes.js";
 import { ApiError } from "./utils/ApiError.js";
 import cookieParser from "cookie-parser";
 import problemRoutes from "./routes/problem.route.js";
+import executionRoute from "./routes/executeCode-route.js";
+import submissionRoutes from "./routes/submission.routes.js";
+import playlistRoutes from "./routes/playlist.routes.js";
 dotenv.config({
   path: ".env",
 });
@@ -25,6 +28,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use("/api/v1/auth",authRoutes);
 app.use("/api/v1/problems",problemRoutes);
+app.use("/api/v1/execute-code",executionRoute)
+app.use("/api/v1/submission",submissionRoutes)
+app.use("/api/v1/playlist",playlistRoutes)
 app.use((err, req, res, next) => {
   console.error("💥 Error Middleware Triggered:", err);
 

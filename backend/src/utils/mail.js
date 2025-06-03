@@ -49,7 +49,7 @@ const emailVerificationContent = (username, verificationURL) => {
       body: {
         name: username,
         intro:
-          "Welcome to Project Management System! We're very excited to have you on board.",
+          "Welcome to leetlab ! We're very excited to have you on board.",
         action: {
           instructions: "To get started with US, please click here:",
           button: {
