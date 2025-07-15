@@ -88,9 +88,9 @@ const addProblemToPlaylist = async (req, res) => {
     return res.status(400).json({error:"Invalid or missing problemId"})
     }
 
-    const problemsInPlaylist = await db.problemsInPlaylist.createMany({
+    const problemsInPlaylist = await db.problemInPlaylist.createMany({
         data:problemIds.map((problemId)=>({
-            playlistId,
+            playListId: playlistId,
             problemId
         }))
     })
@@ -140,9 +140,9 @@ try {
         return res.status(400).json({error:"Invalid or missing problemsId"})
     }
 
-    const deletedProblem = await db.problemsInPlaylist.deleteMany({
+    const deletedProblem = await db.problemInPlaylist.deleteMany({
        where:{
-        playlistId,
+         playListId: playlistId,
         problemId:{
             in:problemIds
         }

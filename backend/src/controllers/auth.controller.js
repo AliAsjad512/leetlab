@@ -77,6 +77,9 @@ const verificationURL = `${process.env.BASE_URL}/api/v1/auth/verify/${token}`;
       200,
       "User is registered and Verification Email sent successfully",
     ),
+     {
+    id: newUser.id
+  }
   );
 
 })
@@ -227,34 +230,37 @@ const refreshToken = jwt.sign(
     id:loggedinUser.id,
   },
   process.env.REFRESH_TOKEN_SECRET,
-  {expiresIn : "15m"}
+  {expiresIn : "7d"}
 )
 
 
 const accessToken = jwt.sign(
   {
     id:loggedinUser.id,
-    password:loggedinUser.password,
+    
     email:loggedinUser.email,
   },
   process.env.ACCESS_TOKEN_SECRET,
-  {expiresIn : "15m"}
+  {expiresIn : "20m"}
 )
 
+const isProduction = process.env.NODE_ENV === "production";
 const accessTokenCookieOptions ={
   httpOnly:true,
-  secure : process.env.NODE_ENV === "production",
+  secure : isProduction,
   sameSite : "lax",
-  maxAge : 10 * 60 * 1000
+  maxAge : 20 * 60 * 1000,
+  path: "/",
 }
 
 res.cookie("AccessToken",accessToken,accessTokenCookieOptions);
 
 const refreshTokenCookieOptions = {
   httpOnly:true,
-  secure:process.env.NODE_ENV === "production",
+  secure:isProduction,
   sameSite: "lax",
-  maxAge : 20 * 60 * 1000,
+  maxAge : 7 *24 * 60 * 60 * 1000,
+  path: "/",
 }
 
 res.cookie("RefreshToken",refreshToken,refreshTokenCookieOptions);
@@ -287,7 +293,7 @@ const getProfile = asyncHandler(async(req, res) =>{
     throw new ApiError(404, "User is logged Out");
   }
 
-  return res.status(200).json(new ApiResponse(200,"You are on Profile Page"))
+  return res.status(200).json(new ApiResponse(200,"You are on Profile Page",loggedinUser))
 
 })
 
@@ -303,7 +309,10 @@ const loggedinUser = await db.User.findUnique({
 if(!loggedinUser){
   throw new ApiError(404,"User not found")
 }
-
+  await db.User.update({
+    where: { id: loggedinUser.id },
+    data: { refreshToken: null },
+  });
 const accessTokenCookieOptions = {
   httpOnly: true,
   secure : process.env.NODE_ENV === "production",
@@ -422,6 +431,48 @@ return res.status(200).json(new ApiResponse(200,"Password changed Successfully")
 
 })
 
+// const check= asyncHandler(async(req , res)=>{
+//  if (!req.user) {
+//     // Throwing error will be caught by asyncHandler and passed to error middleware
+//     const error = new Error("User not authenticated");
+//     error.statusCode = 401;
+//     throw error;
+//   }
+
+//   return res.status(200).json({
+//     success: true,
+//     message: "User authenticated successfully",
+//     user: req.user,
+//   });
+// })
+
+ const check = asyncHandler(async (req, res) => {
+  if (!req.user) {
+    const error = new Error("User not authenticated");
+    error.statusCode = 401;
+    throw error;
+  }
+
+  // ✅ You must include user data explicitly
+  const user = await db.User.findUnique({
+    where: { id: req.user.id },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      image: true,
+    },
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "User authenticated successfully",
+    user, // ✅ include user
+  });
+});
+
+
 
 export {
   userRegister,
@@ -433,4 +484,5 @@ export {
   forgotPass,
   resetPass,
   resetCurrentPass,
+  check
 };

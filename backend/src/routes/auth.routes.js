@@ -37,8 +37,10 @@ import {
   resetPass,
   userRegister,
    verifyUser,
+   check
 } from "../controllers/auth.controller.js";
  import {isloggedIn} from "../middlewares/auth.middlewares.js";
+
 
 const authRoutes = Router();
 
@@ -48,7 +50,8 @@ authRoutes.post("/resend",resendVerificationEmailValidators(),
 validators,resendverificationemail)
 authRoutes.post("/login",userloginValidators(),validators,loginUser)
 authRoutes.get("/profile",isloggedIn,getProfile)
-authRoutes.get("/logOut", isloggedIn, logOut);
+authRoutes.get("/check",isloggedIn,check)
+authRoutes.post("/logout", isloggedIn, logOut);
 authRoutes.post("/forget",forgotPassValidators(),validators,forgotPass)
 authRoutes.post("/resetPass/:token",resetPassValidators(),validators,resetPass)
 authRoutes.post("/resetCurrentPass",resetPassValidators(),isloggedIn,validators,resetCurrentPass)
